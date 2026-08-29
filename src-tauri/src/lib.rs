@@ -1,129 +1,149 @@
-﻿use std::fs;
+use std::fs;
 use std::io::Cursor;
 use std::path::Path;
 use bytes::Bytes;
-use img_parts::{jpeg::Jpeg, ImageEXIF};
+use img_parts::{jpeg::Jpeg, png::Png, ImageEXIF};
 use serde::{Deserialize, Serialize};
-use exif::{In, Tag, Reader};
+use exif::Reader;
+use base64::{Engine, engine::general_purpose::STANDARD};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ExifTag {
     pub key: String,
     pub value: String,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct FileInfo {
+    pub tags: Vec<ExifTag>,
+    pub file_size: String,
+    pub preview_b64: String,
+    pub mime: String,
+    pub format: String,
+}
+
 #[tauri::command]
-fn read_exif(file_path: String) -> Result<Vec<ExifTag>, String> {
+fn read_exif(file_path: String) -> Result<FileInfo, String> {
     let path = Path::new(&file_path);
     if !path.exists() {
         return Err("File does not exist".into());
     }
-
-    let mut tags: Vec<ExifTag> = Vec::new();
+    let input = fs::read(path).map_err(|e| e.to_string())?;
 
     // File size
-    if let Ok(meta) = fs::metadata(path) {
-        let size = meta.len();
-        let size_str = if size >= 1_048_576 {
-            format!("{:.1} MB", size as f64 / 1_048_576.0)
-        } else {
-            format!("{:.0} KB", size as f64 / 1024.0)
-        };
-        tags.push(ExifTag { key: "file_size".to_string(), value: size_str });
-    }
+    let size = input.len() as u64;
+    let file_size = if size >= 1_048_576 {
+        format!("{:.1} MB", size as f64 / 1_048_576.0)
+    } else {
+        format!("{:.0} KB", size as f64 / 1024.0)
+    };
 
-    let input = fs::read(path).map_err(|e| e.to_string())?;
+    let ext = path.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let mime = match ext.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "tif" | "tiff" => "image/tiff",
+        _ => "image/jpeg",
+    }.to_string();
+
+    // Preview (limit to 4MB)
+    let preview_data = if input.len() > 4_000_000 {
+        input[..4_000_000].to_vec()
+    } else {
+        input.clone()
+    };
+    let preview_b64 = STANDARD.encode(&preview_data);
+
+    // Read EXIF
+    let mut tags: Vec<ExifTag> = Vec::new();
     let mut cursor = Cursor::new(&input);
-
     match Reader::new().read_from_container(&mut cursor) {
         Ok(exif) => {
-            let field_map = vec![
-                (Tag::Make, "make"),
-                (Tag::Model, "model"),
-                (Tag::DateTime, "datetime"),
-                (Tag::DateTimeOriginal, "datetime_original"),
-                (Tag::Software, "software"),
-                (Tag::ImageWidth, "width"),
-                (Tag::ImageLength, "height"),
-                (Tag::GPSLatitude, "gps_latitude"),
-                (Tag::GPSLongitude, "gps_longitude"),
-                (Tag::GPSAltitude, "gps_altitude"),
-                (Tag::FocalLength, "focal_length"),
-                (Tag::FNumber, "aperture"),
-                (Tag::ExposureTime, "exposure_time"),
-                (Tag::ISOSpeed, "iso"),
-                (Tag::LensModel, "lens_model"),
-                (Tag::Copyright, "copyright"),
-                (Tag::Artist, "author"),
-            ];
-
-            for (tag, key) in field_map {
-                if let Some(field) = exif.get_field(tag, In::PRIMARY) {
-                    let val = field.display_value().with_unit(&exif).to_string();
-                    if !val.is_empty() && val != "\"\"" {
-                        tags.push(ExifTag {
-                            key: key.to_string(),
-                            value: val,
-                        });
-                    }
+            for field in exif.fields() {
+                let value = field.display_value().with_unit(&exif).to_string();
+                if !value.is_empty() && value != "\"\"" {
+                    tags.push(ExifTag {
+                        key: format!("{}", field.tag),
+                        value,
+                    });
                 }
             }
-
-            if tags.len() == 1 {
-                // Only file size added, no EXIF found
-                tags.push(ExifTag {
-                    key: "has_exif".to_string(),
-                    value: "false".to_string(),
-                });
-            }
         }
-        Err(_) => {
-            tags.push(ExifTag {
-                key: "has_exif".to_string(),
-                value: "false".to_string(),
-            });
-        }
+        Err(_) => {}
     }
 
-    Ok(tags)
+    Ok(FileInfo { tags, file_size, preview_b64, mime, format: ext })
 }
 
 #[tauri::command]
-fn clean_exif(file_paths: Vec<String>) -> Result<Vec<String>, String> {
-    let mut cleaned_files = Vec::new();
+fn clean_exif(file_paths: Vec<String>) -> Result<String, String> {
+    let mut cleaned_count = 0;
+    let mut output_dir = String::new();
 
-    for file_path in file_paths {
-        let path = Path::new(&file_path);
-        if !path.exists() {
-            continue;
-        }
+    for file_path in &file_paths {
+        let path = Path::new(file_path);
+        if !path.exists() { continue; }
 
         let parent = path.parent().unwrap_or(Path::new(""));
         let cleaned_dir = parent.join("Cleaned");
-
         if !cleaned_dir.exists() {
-            if let Err(e) = fs::create_dir_all(&cleaned_dir) {
-                return Err(format!("Failed to create Cleaned directory: {}", e));
-            }
+            fs::create_dir_all(&cleaned_dir).map_err(|e| e.to_string())?;
+        }
+        if output_dir.is_empty() {
+            output_dir = cleaned_dir.to_string_lossy().into_owned();
         }
 
         let file_name = path.file_name().unwrap().to_string_lossy();
         let out_path = cleaned_dir.join(format!("{}", file_name));
         let input = fs::read(path).map_err(|e| e.to_string())?;
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
 
-        if let Ok(mut jpeg) = Jpeg::from_bytes(Bytes::from(input)) {
-            jpeg.set_exif(None);
-            let mut out = fs::File::create(&out_path).map_err(|e| e.to_string())?;
-            jpeg.encoder().write_to(&mut out).map_err(|e| e.to_string())?;
-            cleaned_files.push(out_path.to_string_lossy().into_owned());
+        let cleaned: Option<Vec<u8>> = match ext.as_str() {
+            "jpg" | "jpeg" => {
+                if let Ok(mut jpeg) = Jpeg::from_bytes(Bytes::from(input)) {
+                    jpeg.set_exif(None);
+                    let mut buf = Vec::new();
+                    jpeg.encoder().write_to(&mut buf).map_err(|e| e.to_string())?;
+                    Some(buf)
+                } else { None }
+            }
+            "png" => {
+                if let Ok(mut png) = Png::from_bytes(Bytes::from(input)) {
+                    png.set_exif(None);
+                    let mut buf = Vec::new();
+                    png.encoder().write_to(&mut buf).map_err(|e| e.to_string())?;
+                    Some(buf)
+                } else { None }
+            }
+            _ => Some(input),
+        };
+
+        if let Some(data) = cleaned {
+            fs::write(&out_path, data).map_err(|e| e.to_string())?;
+            cleaned_count += 1;
         }
     }
 
-    if cleaned_files.is_empty() {
-        return Err("No valid JPEG files processed.".into());
+    if cleaned_count == 0 {
+        return Err("No files were processed.".into());
     }
+    Ok(output_dir)
+}
 
-    Ok(cleaned_files)
+#[tauri::command]
+fn open_folder(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("explorer").arg(&path).spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open").arg(&path).spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "linux")]
+    std::process::Command::new("xdg-open").arg(&path).spawn().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -131,7 +151,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![read_exif, clean_exif])
+        .invoke_handler(tauri::generate_handler![read_exif, clean_exif, open_folder])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
