@@ -16,9 +16,7 @@
 
 ## 📸 Screenshot
 
-> *Placeholder: Replace this block with your actual app screenshot! Save it as `screenshot.png` in the root folder.*
-> 
-> `![App Screenshot](screenshot.png)`
+![App Screenshot](Captura.png)
 
 ## ✨ Features
 
@@ -67,3 +65,4 @@ This tool was built because taking a photo on a modern smartphone saves exact GP
 
 ---
 *Built with ❤️ using Tauri & SvelteKit.*
+
