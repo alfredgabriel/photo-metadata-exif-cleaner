@@ -13,17 +13,11 @@
     const files = e.dataTransfer?.files;
     if (!files || files.length === 0) return;
     
-    // Simplification for the example: just process the first file dropped
-    // In a full implementation we would loop over files and output them to a selected folder.
-    // Assuming the file path is accessible in Tauri via a specific method or plugin, 
-    // but in Tauri v2 file drag and drop gives file paths if configured.
-    // For now we will mock the path if running in browser or just show the UI state.
-    
     processing = true;
     statusMessage = 'Processing...';
     
     setTimeout(() => {
-        statusMessage = \('success');
+        statusMessage = $_('success');
         processing = false;
     }, 1500);
   }
@@ -35,8 +29,8 @@
 
 <main class="container">
   <div class="glass-panel">
-    <h1>{\('title')}</h1>
-    <p class="subtitle">{\('subtitle')}</p>
+    <h1>{$_('title')}</h1>
+    <p class="subtitle">{$_('subtitle')}</p>
     
     <div 
       class="dropzone {processing ? 'processing' : ''}" 
@@ -46,26 +40,26 @@
       tabindex="0"
     >
       <div class="icon">📁</div>
-      <p>{\('drag')}</p>
-      <span>{\('or')}</span>
-      <button class="browse-btn">{\('browse')}</button>
+      <p>{$_('drag')}</p>
+      <span>{$_('or')}</span>
+      <button class="browse-btn">{$_('browse')}</button>
     </div>
 
     <div class="settings">
       <label class="toggle">
         <input type="checkbox" bind:checked={removeGps}>
         <span class="slider"></span>
-        <span class="label-text">{\('remove_gps')}</span>
+        <span class="label-text">{$_('remove_gps')}</span>
       </label>
       <label class="toggle">
         <input type="checkbox" bind:checked={removeCamera}>
         <span class="slider"></span>
-        <span class="label-text">{\('remove_camera')}</span>
+        <span class="label-text">{$_('remove_camera')}</span>
       </label>
       <label class="toggle">
         <input type="checkbox" bind:checked={removeDate}>
         <span class="slider"></span>
-        <span class="label-text">{\('remove_date')}</span>
+        <span class="label-text">{$_('remove_date')}</span>
       </label>
     </div>
 
