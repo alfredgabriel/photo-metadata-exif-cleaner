@@ -22,4 +22,6 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+img-parts = "0.4.0"
+bytes = "1.12.1"
 
