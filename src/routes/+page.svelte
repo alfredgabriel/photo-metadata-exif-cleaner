@@ -1,563 +1,561 @@
 ﻿<script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
-  import { _ } from 'svelte-i18n';
+  import { _, locale } from 'svelte-i18n';
   import * as ExifReader from 'exifreader';
-  
+
   let processing = false;
   let statusMessage = '';
+  let statusType = 'info';
   let removeGps = true;
   let removeCamera = true;
   let removeDate = true;
-  
-  let selectedFiles: { file: File, path: string, preview: string, meta: any[] }[] = [];
-  
-  let isCleaned = false;
 
-  async function processFiles(files: File[], paths: string[]) {
+  type FileEntry = { name: string; path: string; preview: string; meta: { key: string; value: string }[] };
+  let selectedFiles: FileEntry[] = [];
+  let isCleaned = false;
+  let dragActive = false;
+
+  const languages = [
+    { code: 'en', label: 'English' },
+    { code: 'es', label: 'Español' }
+  ];
+
+  function setLocale(code: string) {
+    locale.set(code);
+  }
+
+  async function loadFilesFromPaths(paths: string[]) {
     statusMessage = '';
     isCleaned = false;
-    selectedFiles = [];
-    
-    for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const path = paths[i];
-        const preview = URL.createObjectURL(file);
-        
-        let meta = [];
-        try {
-            const tags = await ExifReader.load(file);
-            if (tags['GPSLatitude']) meta.push({ key: $_('gps'), value: $_('detected_val') });
-            if (tags['Model']) meta.push({ key: $_('camera'), value: tags['Model'].description });
-            if (tags['DateTimeOriginal']) meta.push({ key: $_('date_taken'), value: tags['DateTimeOriginal'].description });
-            if (tags['LensModel']) meta.push({ key: $_('lens'), value: tags['LensModel'].description });
-            
-            if (meta.length === 0) meta.push({ key: $_('status_clean'), value: $_('clean_val') });
-        } catch (err) {
-            meta = [{ key: 'Info', value: $_('no_exif') }];
-        }
-        
-        selectedFiles = [...selectedFiles, { file, path, preview, meta }];
-    }
+    selectedFiles = paths.map(p => ({
+      name: p.split(/[\\/]/).pop() || p,
+      path: p,
+      preview: '',
+      meta: [{ key: 'File', value: p.split(/[\\/]/).pop() || p }]
+    }));
   }
 
   async function handleDrop(e: DragEvent) {
     e.preventDefault();
+    dragActive = false;
     const files = Array.from(e.dataTransfer?.files || []);
     if (files.length === 0) return;
-    
-    // Attempt to extract native paths if Tauri injects them (sometimes as 'path' property)
-    const paths = files.map(f => (f as any).path || '');
-    if (!paths[0]) {
-        alert("Drag & Drop path extraction not supported in this mode. Please use Browse Files.");
-        return;
+    statusMessage = '';
+    isCleaned = false;
+    selectedFiles = [];
+    for (const file of files) {
+      const path = (file as any).path || '';
+      const preview = URL.createObjectURL(file);
+      let meta: { key: string; value: string }[] = [];
+      try {
+        const tags = await ExifReader.load(file);
+        if (tags['GPSLatitude']) meta.push({ key: $_('gps'), value: $_('detected_val') });
+        if (tags['Model']) meta.push({ key: $_('camera'), value: tags['Model'].description });
+        if (tags['DateTimeOriginal']) meta.push({ key: $_('date_taken'), value: tags['DateTimeOriginal'].description });
+        if (tags['LensModel']) meta.push({ key: $_('lens'), value: tags['LensModel'].description });
+        if (meta.length === 0) meta.push({ key: $_('status_clean'), value: $_('clean_val') });
+      } catch {
+        meta = [{ key: 'Info', value: $_('no_exif') }];
+      }
+      selectedFiles = [...selectedFiles, { name: file.name, path, preview, meta }];
     }
-    
-    await processFiles(files, paths);
   }
-  
-  function handleDragOver(e: DragEvent) {
-    e.preventDefault();
-  }
-  
+
+  function handleDragOver(e: DragEvent) { e.preventDefault(); dragActive = true; }
+  function handleDragLeave() { dragActive = false; }
+
   async function handleBrowse() {
+    try {
       const selected = await open({
-          multiple: true,
-          filters: [{ name: 'Images', extensions: ['jpg', 'jpeg'] }]
+        multiple: true,
+        filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png'] }]
       });
-      
       if (!selected) return;
-      
       const paths = Array.isArray(selected) ? selected : [selected];
-      
-      // We don't have the File objects directly from dialog, so we skip frontend EXIF preview for dialog selection
-      // Or we can fetch them using Tauri fs API, but to keep it simple, we'll just show the paths.
-      
-      statusMessage = '';
-      isCleaned = false;
-      selectedFiles = paths.map(path => ({
-          file: null as any,
-          path,
-          preview: '', // Hard to preview without reading file
-          meta: [{ key: 'File', value: path }]
-      }));
+      await loadFilesFromPaths(paths);
+    } catch (e) {
+      console.error(e);
+    }
   }
 
   async function cleanImages() {
-     processing = true;
-     statusMessage = $_('cleaning');
-     
-     const filePaths = selectedFiles.map(s => s.path);
-     
-     try {
-         const result = await invoke('clean_exif', { filePaths });
-         statusMessage = $_('cleaned_success');
-         isCleaned = true;
-     } catch (err) {
-         statusMessage = $_('error') + ': ' + err;
-     } finally {
-         processing = false;
-     }
+    processing = true;
+    statusMessage = $_('cleaning');
+    statusType = 'info';
+    const filePaths = selectedFiles.map(s => s.path).filter(p => p);
+    if (filePaths.length === 0) {
+      statusMessage = $_('error_no_path');
+      statusType = 'error';
+      processing = false;
+      return;
+    }
+    try {
+      await invoke('clean_exif', { filePaths });
+      statusMessage = $_('cleaned_success');
+      statusType = 'success';
+      isCleaned = true;
+    } catch (err) {
+      statusMessage = $_('error') + ': ' + err;
+      statusType = 'error';
+    } finally {
+      processing = false;
+    }
   }
-  
+
   function reset() {
-      selectedFiles = [];
-      isCleaned = false;
-      statusMessage = '';
+    selectedFiles = [];
+    isCleaned = false;
+    statusMessage = '';
   }
 </script>
 
-<div class="app-wrapper">
+<div class="app">
   <!-- Sidebar -->
   <aside class="sidebar">
     <div class="brand">
-      <svg class="app-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path>
-        <circle cx="12" cy="13" r="3"></circle>
-        <path d="M12 10v.01"></path>
-        <path d="M19 13v.01"></path>
-        <path d="M5 13v.01"></path>
-      </svg>
-      <div>
+      <div class="logo-wrap">
+        <svg viewBox="0 0 100 100" class="logo-svg" xmlns="http://www.w3.org/2000/svg">
+          <rect x="8" y="32" width="84" height="55" rx="10" ry="10" fill="#0ea5e9"/>
+          <path d="M35 32 L38 20 L62 20 L65 32 Z" fill="#0ea5e9"/>
+          <circle cx="50" cy="58" r="20" fill="#0c4a6e"/>
+          <circle cx="50" cy="58" r="14" fill="#0369a1"/>
+          <circle cx="50" cy="58" r="8" fill="#7dd3fc"/>
+          <circle cx="47" cy="54" r="2.5" fill="white" opacity="0.6"/>
+          <circle cx="78" cy="42" r="4" fill="white" opacity="0.85"/>
+          <polygon points="76,16 78,21 83,22 78,23 76,28 74,23 69,22 74,21" fill="white" opacity="0.9"/>
+        </svg>
+      </div>
+      <div class="brand-text">
         <h1>{$_('title')}</h1>
-        <p class="subtitle">{$_('subtitle')}</p>
+        <p class="tagline">{$_('subtitle')}</p>
       </div>
     </div>
 
-    <div class="settings-panel">
-      <h3>{$_('options')}</h3>
+    <!-- Language Switcher -->
+    <div class="section">
+      <span class="section-label">{$_('language')}</span>
+      <div class="lang-btns">
+        {#each languages as lang}
+          <button
+            class="lang-btn {$locale === lang.code ? 'active' : ''}"
+            on:click={() => setLocale(lang.code)}
+          >{lang.label}</button>
+        {/each}
+      </div>
+    </div>
+
+    <!-- Options -->
+    <div class="section">
+      <span class="section-label">{$_('options')}</span>
       <label class="toggle">
-        <input type="checkbox" bind:checked={removeGps}>
-        <span class="slider"></span>
+        <span class="toggle-icon">📍</span>
         <span class="label-text">{$_('remove_gps')}</span>
+        <div class="switch">
+          <input type="checkbox" bind:checked={removeGps}>
+          <span class="slider"></span>
+        </div>
       </label>
       <label class="toggle">
-        <input type="checkbox" bind:checked={removeCamera}>
-        <span class="slider"></span>
+        <span class="toggle-icon">📷</span>
         <span class="label-text">{$_('remove_camera')}</span>
+        <div class="switch">
+          <input type="checkbox" bind:checked={removeCamera}>
+          <span class="slider"></span>
+        </div>
       </label>
       <label class="toggle">
-        <input type="checkbox" bind:checked={removeDate}>
-        <span class="slider"></span>
+        <span class="toggle-icon">🗓️</span>
         <span class="label-text">{$_('remove_date')}</span>
+        <div class="switch">
+          <input type="checkbox" bind:checked={removeDate}>
+          <span class="slider"></span>
+        </div>
       </label>
     </div>
 
     <div class="sidebar-footer">
-      <p>{$_('local_processing')}</p>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      {$_('local_processing')}
     </div>
   </aside>
 
-  <!-- Main Content -->
-  <main class="main-content">
-    
+  <!-- Main -->
+  <main class="main">
     {#if selectedFiles.length === 0}
-    <div 
-      class="dropzone {processing ? 'processing' : ''}" 
-      on:drop={handleDrop} 
-      on:dragover={handleDragOver}
-      role="button"
-      tabindex="0"
-    >
-      <div class="drop-content">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="17 8 12 3 7 8"></polyline>
-            <line x1="12" y1="3" x2="12" y2="15"></line>
-          </svg>
+      <!-- Drop Zone -->
+      <div
+        class="dropzone {dragActive ? 'drag-active' : ''}"
+        on:drop={handleDrop}
+        on:dragover={handleDragOver}
+        on:dragleave={handleDragLeave}
+        role="button"
+        tabindex="0"
+      >
+        <div class="drop-inner">
+          <div class="drop-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+          </div>
           <p class="drop-title">{$_('drag')}</p>
-          <p class="drop-subtitle">{$_('or')}</p>
-          <button class="browse-btn" on:click|stopPropagation={handleBrowse}>{$_('browse')}</button>
+          <p class="drop-sub">{$_('or')}</p>
+          <button class="btn btn-secondary" on:click|stopPropagation={handleBrowse}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            {$_('browse')}
+          </button>
+          <p class="drop-hint">JPG, JPEG, PNG</p>
+        </div>
       </div>
-    </div>
     {:else}
-    <div class="action-area">
-        <div class="metadata-section">
-           <h3>{selectedFiles.length} {$_('detected')}</h3>
-           
-           <div class="file-list">
-             {#each selectedFiles as fileData}
-               <div class="file-card">
-                 {#if fileData.preview}
-                    <img src={fileData.preview} class="thumb" alt="thumb" />
-                 {/if}
-                 <div class="meta-info">
-                    <p class="path-text">{fileData.path}</p>
-                    <div class="metadata-grid">
-                     {#each fileData.meta as item}
-                       <div class="metadata-item">
-                         <span class="meta-key">{item.key}</span>
-                         <span class="meta-value">{item.value}</span>
-                       </div>
-                     {/each}
-                    </div>
-                 </div>
-               </div>
-             {/each}
-           </div>
+      <!-- File List -->
+      <div class="content">
+        <div class="content-header">
+          <h2>{selectedFiles.length} {selectedFiles.length === 1 ? $_('file_singular') : $_('file_plural')} {$_('selected')}</h2>
+          {#if !isCleaned}
+            <button class="btn btn-ghost" on:click={reset}>{$_('clear')}</button>
+          {/if}
         </div>
-        
-        <div class="actions">
-            {#if statusMessage}
-              <div class="status {processing ? 'info' : 'success'}">
-                {statusMessage}
+
+        <div class="file-list">
+          {#each selectedFiles as f}
+            <div class="file-card">
+              <div class="file-thumb">
+                {#if f.preview}
+                  <img src={f.preview} alt={f.name} />
+                {:else}
+                  <div class="thumb-placeholder">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+                    </svg>
+                  </div>
+                {/if}
               </div>
-            {/if}
-            
-            {#if !isCleaned}
-                <button class="clean-btn" on:click={cleanImages} disabled={processing}>
-                   {processing ? $_('cleaning') : $_('clean')}
-                </button>
-            {:else}
-                <button class="browse-btn" on:click={reset}>
-                   {$_('clean_another')}
-                </button>
-            {/if}
+              <div class="file-info">
+                <p class="file-name">{f.name}</p>
+                <div class="tags">
+                  {#each f.meta as m}
+                    <span class="tag"><strong>{m.key}:</strong> {m.value}</span>
+                  {/each}
+                </div>
+              </div>
+              {#if isCleaned}
+                <div class="badge-done">✓</div>
+              {/if}
+            </div>
+          {/each}
         </div>
-    </div>
+
+        <!-- Action Bar -->
+        <div class="action-bar">
+          {#if statusMessage}
+            <p class="status-msg {statusType}">{statusMessage}</p>
+          {/if}
+          {#if !isCleaned}
+            <button class="btn btn-primary" on:click={cleanImages} disabled={processing}>
+              {#if processing}
+                <span class="spinner"></span> {$_('cleaning')}
+              {:else}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                {$_('clean')}
+              {/if}
+            </button>
+          {:else}
+            <button class="btn btn-secondary" on:click={reset}>
+              {$_('clean_another')}
+            </button>
+          {/if}
+        </div>
+      </div>
     {/if}
-    
   </main>
 </div>
 
 <style>
+  :global(*, *::before, *::after) { box-sizing: border-box; margin: 0; padding: 0; }
+
   :global(body) {
-    margin: 0;
-    padding: 0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    background-color: #09090b; 
-    color: #fafafa;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #09090b;
+    color: #e4e4e7;
     height: 100vh;
     overflow: hidden;
   }
 
-  .app-wrapper {
+  .app {
     display: flex;
     height: 100vh;
     width: 100%;
   }
 
-  /* Sidebar */
+  /* ---- Sidebar ---- */
   .sidebar {
-    width: 320px;
-    background: #18181b; 
-    border-right: 1px solid #27272a; 
+    width: 280px;
+    min-width: 280px;
+    background: #111113;
+    border-right: 1px solid #27272a;
     display: flex;
     flex-direction: column;
-    padding: 32px 24px;
-    box-shadow: 2px 0 8px rgba(0,0,0,0.5);
-    z-index: 10;
+    padding: 28px 20px;
+    gap: 28px;
+    overflow-y: auto;
   }
 
   .brand {
     display: flex;
     align-items: center;
-    gap: 16px;
-    margin-bottom: 48px;
+    gap: 14px;
   }
 
-  .app-logo {
-    width: 48px;
-    height: 48px;
-    color: #3b82f6; 
-    background: rgba(59, 130, 246, 0.1);
-    padding: 8px;
-    border-radius: 12px;
-    border: 1px solid rgba(59, 130, 246, 0.2);
+  .logo-wrap {
+    width: 52px;
+    height: 52px;
+    flex-shrink: 0;
   }
 
-  h1 {
-    font-size: 1.25rem;
+  .logo-svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .brand-text h1 {
+    font-size: 1.05rem;
     font-weight: 700;
-    margin: 0 0 4px 0;
-    color: #fafafa;
+    color: #f4f4f5;
+    line-height: 1.2;
   }
 
-  .subtitle {
-    color: #a1a1aa; 
-    font-size: 0.85rem;
-    margin: 0;
+  .tagline {
+    font-size: 0.75rem;
+    color: #71717a;
+    margin-top: 2px;
   }
 
-  .settings-panel {
-    flex-grow: 1;
+  .section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
 
-  .settings-panel h3 {
-    font-size: 0.85rem;
+  .section-label {
+    font-size: 0.7rem;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #71717a; 
-    margin: 0 0 20px 0;
+    letter-spacing: 0.08em;
+    color: #52525b;
   }
 
+  /* Language */
+  .lang-btns {
+    display: flex;
+    gap: 8px;
+  }
+
+  .lang-btn {
+    flex: 1;
+    padding: 6px 8px;
+    background: #1c1c1f;
+    border: 1px solid #3f3f46;
+    color: #a1a1aa;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .lang-btn:hover { background: #27272a; color: #e4e4e7; }
+  .lang-btn.active {
+    background: #0ea5e9;
+    border-color: #0ea5e9;
+    color: white;
+  }
+
+  /* Toggles */
   .toggle {
     display: flex;
     align-items: center;
-    cursor: pointer;
-    margin-bottom: 16px;
-    padding: 12px;
+    gap: 10px;
+    padding: 10px 12px;
     border-radius: 8px;
-    transition: background 0.2s;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
   }
-  
-  .toggle:hover {
-    background: #27272a; 
-  }
+  .toggle:hover { background: #1c1c1f; }
+  .toggle-icon { font-size: 1rem; }
+  .label-text { flex: 1; font-size: 0.875rem; color: #d4d4d8; }
 
-  .toggle input {
-    display: none;
-  }
-
+  .switch { position: relative; width: 38px; height: 22px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
   .slider {
-    width: 36px;
-    height: 20px;
-    background-color: #3f3f46; 
-    border-radius: 20px;
-    position: relative;
-    margin-right: 16px;
+    position: absolute; inset: 0;
+    background: #3f3f46;
+    border-radius: 22px;
     transition: 0.2s;
   }
-
   .slider::before {
     content: '';
     position: absolute;
-    width: 16px;
-    height: 16px;
+    width: 16px; height: 16px;
+    left: 3px; top: 3px;
+    background: white;
     border-radius: 50%;
-    left: 2px;
-    bottom: 2px;
-    background-color: #fafafa;
     transition: 0.2s;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    box-shadow: 0 1px 3px rgba(0,0,0,.4);
   }
-
-  input:checked + .slider {
-    background-color: #3b82f6;
-  }
-
-  input:checked + .slider::before {
-    transform: translateX(16px);
-  }
-
-  .label-text {
-    font-size: 0.95rem;
-    color: #d4d4d8; 
-    font-weight: 500;
-  }
+  input:checked + .slider { background: #0ea5e9; }
+  input:checked + .slider::before { transform: translateX(16px); }
 
   .sidebar-footer {
-    text-align: center;
-    color: #71717a;
-    font-size: 0.8rem;
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    color: #52525b;
     padding-top: 20px;
-    border-top: 1px solid #27272a;
+    border-top: 1px solid #1c1c1f;
   }
 
-  /* Main Content */
-  .main-content {
-    flex-grow: 1;
-    padding: 40px;
+  /* ---- Main ---- */
+  .main {
+    flex: 1;
+    padding: 32px;
     display: flex;
     flex-direction: column;
+    background: #09090b;
     background-image: radial-gradient(#27272a 1px, transparent 1px);
-    background-size: 24px 24px;
+    background-size: 28px 28px;
     overflow-y: auto;
   }
 
+  /* Drop Zone */
   .dropzone {
-    flex-grow: 1;
-    min-height: 300px;
-    border: 2px dashed #3f3f46; 
-    border-radius: 16px;
+    flex: 1;
+    min-height: 400px;
+    border: 2px dashed #3f3f46;
+    border-radius: 20px;
     display: flex;
-    justify-content: center;
     align-items: center;
-    background: rgba(24, 24, 27, 0.7); 
-    backdrop-filter: blur(4px);
-    transition: all 0.2s ease;
+    justify-content: center;
+    background: rgba(17,17,19,0.7);
+    backdrop-filter: blur(6px);
+    transition: border-color 0.2s, background 0.2s;
     cursor: pointer;
-    overflow: hidden;
+  }
+  .dropzone:hover, .dropzone.drag-active {
+    border-color: #0ea5e9;
+    background: rgba(14,165,233,0.04);
   }
 
-  .dropzone:hover {
-    border-color: #3b82f6;
-    background: rgba(59, 130, 246, 0.05);
-  }
+  .drop-inner { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
 
-  .dropzone.processing {
-    opacity: 0.7;
-    pointer-events: none;
+  .drop-icon {
+    width: 72px; height: 72px;
+    background: #1c1c1f;
+    border-radius: 16px;
+    display: flex; align-items: center; justify-content: center;
+    color: #52525b;
+    margin-bottom: 4px;
   }
-  
-  .drop-content {
-    text-align: center;
-  }
+  .drop-icon svg { width: 36px; height: 36px; }
 
-  .icon {
-    width: 64px;
-    height: 64px;
-    color: #71717a;
-    margin-bottom: 16px;
-  }
+  .drop-title { font-size: 1.2rem; font-weight: 600; color: #f4f4f5; }
+  .drop-sub { font-size: 0.875rem; color: #71717a; }
+  .drop-hint { font-size: 0.75rem; color: #52525b; margin-top: 4px; }
 
-  .drop-title {
-    font-size: 1.25rem;
-    color: #fafafa;
-    margin: 0 0 8px 0;
-    font-weight: 600;
-  }
-  
-  .drop-subtitle {
-    color: #a1a1aa;
-    margin: 0 0 24px 0;
-  }
-
-  .browse-btn {
-    background: #27272a; 
-    border: 1px solid #3f3f46; 
-    padding: 10px 24px;
-    color: #fafafa;
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
     border-radius: 8px;
-    font-weight: 500;
-    font-size: 0.95rem;
-    cursor: pointer;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-    transition: all 0.2s;
-  }
-
-  .browse-btn:hover {
-    background: #3f3f46;
-    border-color: #52525b;
-  }
-
-  .action-area {
-    margin-top: 32px;
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-  }
-
-  .metadata-section {
-    background: #18181b;
-    padding: 24px;
-    border-radius: 12px;
-    border: 1px solid #27272a;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-  }
-
-  .metadata-section h3 {
-    font-size: 1.1rem;
+    font-size: 0.9rem;
     font-weight: 600;
-    color: #fafafa;
-    margin: 0 0 16px 0;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
   }
+  .btn-primary { background: #0ea5e9; color: white; }
+  .btn-primary:hover:not(:disabled) { background: #0284c7; }
+  .btn-primary:disabled { background: #27272a; color: #71717a; cursor: not-allowed; }
+  .btn-secondary { background: #1c1c1f; color: #e4e4e7; border: 1px solid #3f3f46; }
+  .btn-secondary:hover { background: #27272a; }
+  .btn-ghost { background: transparent; color: #71717a; border: 1px solid transparent; }
+  .btn-ghost:hover { color: #e4e4e7; border-color: #3f3f46; }
 
-  .file-list {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+  /* Content */
+  .content { display: flex; flex-direction: column; gap: 20px; flex: 1; }
+
+  .content-header {
+    display: flex; align-items: center; justify-content: space-between;
   }
+  .content-header h2 { font-size: 1rem; font-weight: 600; color: #f4f4f5; }
+
+  /* File List */
+  .file-list { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; flex: 1; }
 
   .file-card {
-    display: flex;
-    gap: 16px;
-    background: #09090b;
-    padding: 16px;
-    border-radius: 8px;
+    display: flex; align-items: center; gap: 14px;
+    background: #111113;
     border: 1px solid #27272a;
-  }
-
-  .thumb {
-    width: 80px;
-    height: 80px;
-    object-fit: cover;
-    border-radius: 6px;
-  }
-
-  .meta-info {
-    flex-grow: 1;
-  }
-
-  .path-text {
-    font-family: monospace;
-    font-size: 0.8rem;
-    color: #71717a;
-    margin: 0 0 8px 0;
-    word-break: break-all;
-  }
-
-  .metadata-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .metadata-item {
-    display: flex;
-    gap: 8px;
-    background: #18181b;
-    padding: 6px 10px;
-    border-radius: 4px;
-    border: 1px solid #27272a;
-    font-size: 0.8rem;
-  }
-  
-  .meta-key {
-    color: #a1a1aa;
-    text-transform: uppercase;
-    font-weight: 600;
-  }
-  
-  .meta-value {
-    color: #fafafa;
-  }
-
-  .actions {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    background: #18181b;
-    padding: 16px 24px;
     border-radius: 12px;
-    border: 1px solid #27272a;
+    padding: 14px 16px;
+    transition: border-color 0.15s;
+  }
+  .file-card:hover { border-color: #3f3f46; }
+
+  .file-thumb {
+    width: 56px; height: 56px; flex-shrink: 0;
+    border-radius: 8px; overflow: hidden; background: #1c1c1f;
+  }
+  .file-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .thumb-placeholder {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    color: #52525b;
+  }
+  .thumb-placeholder svg { width: 24px; height: 24px; }
+
+  .file-info { flex: 1; min-width: 0; }
+  .file-name { font-size: 0.875rem; font-weight: 500; color: #e4e4e7; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    font-size: 0.75rem; padding: 2px 8px;
+    background: #1c1c1f; border: 1px solid #3f3f46;
+    border-radius: 99px; color: #a1a1aa;
+  }
+  .tag strong { color: #e4e4e7; }
+
+  .badge-done {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: #052e16; border: 1px solid #166534;
+    color: #4ade80; display: flex; align-items: center; justify-content: center;
+    font-size: 0.85rem; font-weight: 700;
   }
 
-  .clean-btn {
-    background: #3b82f6;
-    border: none;
-    padding: 12px 32px;
-    color: white;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 1rem;
-    cursor: pointer;
-    transition: background 0.2s;
+  /* Action Bar */
+  .action-bar {
+    display: flex; align-items: center; justify-content: flex-end; gap: 14px;
+    background: #111113; border: 1px solid #27272a;
+    border-radius: 12px; padding: 14px 20px;
   }
 
-  .clean-btn:hover:not(:disabled) {
-    background: #2563eb;
-  }
+  .status-msg { flex: 1; font-size: 0.875rem; }
+  .status-msg.success { color: #4ade80; }
+  .status-msg.error { color: #f87171; }
+  .status-msg.info { color: #38bdf8; }
 
-  .clean-btn:disabled {
-    background: #3f3f46;
-    color: #a1a1aa;
-    cursor: not-allowed;
+  .spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: white; border-radius: 50%;
+    animation: spin 0.6s linear infinite;
   }
-
-  .status {
-    padding: 8px 16px;
-    border-radius: 6px;
-    font-weight: 500;
-    font-size: 0.95rem;
-  }
-  
-  .status.info {
-    color: #60a5fa;
-  }
-  
-  .status.success {
-    color: #34d399;
-  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
