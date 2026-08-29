@@ -1,7 +1,12 @@
-# Tauri + SvelteKit + TypeScript
+﻿# Photo Metadata EXIF Cleaner
 
-This template should help get you started developing with Tauri, SvelteKit and TypeScript in Vite.
+A fast, privacy-focused desktop app to strip EXIF metadata from photos.
 
-## Recommended IDE Setup
+## Features
+- Privacy First: 100% local processing.
+- Batch Processing: Drag and drop.
+- Fast: Powered by Rust.
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).
+## Development
+npm install
+npm run tauri dev
