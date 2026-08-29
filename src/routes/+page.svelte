@@ -34,16 +34,13 @@
         if (tags['DateTimeOriginal']) {
             metadataList.push({ key: 'Date Taken', value: tags['DateTimeOriginal'].description });
         }
-        if (tags['LensModel']) {
-            metadataList.push({ key: 'Lens', value: tags['LensModel'].description });
-        }
         
         if (metadataList.length === 0) {
             metadataList.push({ key: 'Clean', value: 'No sensitive EXIF data found.' });
         }
     } catch (err) {
         console.error(err);
-        metadataList = [{ key: 'Info', value: 'No EXIF metadata or unsupported format.' }];
+        metadataList = [{ key: 'Info', value: 'No EXIF metadata found.' }];
     }
   }
   
@@ -53,27 +50,24 @@
 
   function cleanImage() {
      processing = true;
-     statusMessage = 'Scrubbing EXIF Data...';
+     statusMessage = 'Cleaning...';
      
      setTimeout(() => {
         statusMessage = $_('success');
-        metadataList = [{ key: 'Status', value: 'Metadata completely stripped 🛡️' }];
+        metadataList = [{ key: 'Status', value: 'All metadata removed successfully.' }];
         processing = false;
-     }, 1500);
+     }, 1000);
   }
 </script>
 
 <main class="container">
-  <div class="glass-panel">
-    
-    <div class="header">
-      <div class="logo-container">
-         <img src="/logo.jpg" alt="Logo" class="app-logo" />
-      </div>
-      <h1>{$_('title')}</h1>
-      <p class="subtitle">{$_('subtitle')}</p>
-    </div>
-    
+  <div class="header">
+    <img src="/app-icon.jpg" alt="Logo" class="app-logo" />
+    <h1>{$_('title')}</h1>
+    <p class="subtitle">{$_('subtitle')}</p>
+  </div>
+  
+  <div class="card">
     <div 
       class="dropzone {processing ? 'processing' : ''} {imagePreview ? 'has-image' : ''}" 
       on:drop={handleDrop} 
@@ -82,9 +76,10 @@
       tabindex="0"
     >
       {#if !imagePreview}
-        <div class="icon">📁</div>
-        <p>{$_('drag')}</p>
-        <span>{$_('or')}</span>
+        <div class="icon">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+        </div>
+        <p class="drop-text">{$_('drag')}</p>
         <button class="browse-btn">{$_('browse')}</button>
       {:else}
         <img src={imagePreview} class="preview-image" alt="Preview" />
@@ -92,16 +87,18 @@
     </div>
 
     {#if imagePreview}
-    <div class="metadata-card">
-       <h3>Detected Metadata</h3>
-       <ul>
+    <div class="metadata-section">
+       <h3>Detected Data</h3>
+       <div class="metadata-grid">
          {#each metadataList as item}
-           <li><strong>{item.key}:</strong> <span>{item.value}</span></li>
+           <div class="metadata-item">
+             <span class="meta-key">{item.key}</span>
+             <span class="meta-value">{item.value}</span>
+           </div>
          {/each}
-       </ul>
+       </div>
     </div>
-    {/if}
-
+    
     <div class="settings">
       <label class="toggle">
         <input type="checkbox" bind:checked={removeGps}>
@@ -120,10 +117,9 @@
       </label>
     </div>
 
-    {#if imagePreview}
-      <button class="clean-btn" on:click={cleanImage} disabled={processing}>
-         {processing ? 'Processing...' : $_('clean')}
-      </button>
+    <button class="clean-btn" on:click={cleanImage} disabled={processing}>
+       {processing ? 'Processing...' : $_('clean')}
+    </button>
     {/if}
 
     {#if statusMessage}
@@ -138,10 +134,9 @@
   :global(body) {
     margin: 0;
     padding: 0;
-    font-family: 'Outfit', 'Inter', sans-serif;
-    background: #0f0c29;
-    background: linear-gradient(135deg, #050510, #130a1e, #0a1128);
-    color: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: #f9fafb;
+    color: #111827;
     min-height: 100vh;
     display: flex;
     justify-content: center;
@@ -150,194 +145,150 @@
 
   .container {
     width: 100%;
-    max-width: 650px;
+    max-width: 500px;
     padding: 20px;
-    animation: fadeIn 0.8s ease-out;
-  }
-
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  .glass-panel {
-    background: rgba(20, 20, 35, 0.6);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(0, 210, 255, 0.2);
-    border-radius: 24px;
-    padding: 40px;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-    text-align: center;
-    position: relative;
-    overflow: hidden;
-  }
-  
-  .glass-panel::before {
-    content: '';
-    position: absolute;
-    top: -50%; left: -50%; width: 200%; height: 200%;
-    background: radial-gradient(circle, rgba(0,210,255,0.05) 0%, transparent 60%);
-    pointer-events: none;
   }
 
   .header {
-    margin-bottom: 30px;
-  }
-
-  .logo-container {
-    width: 80px;
-    height: 80px;
-    margin: 0 auto 15px;
-    border-radius: 20px;
-    padding: 3px;
-    background: linear-gradient(135deg, #00d2ff, #3a7bd5);
-    box-shadow: 0 0 20px rgba(0, 210, 255, 0.4);
+    text-align: center;
+    margin-bottom: 24px;
   }
 
   .app-logo {
-    width: 100%;
-    height: 100%;
-    border-radius: 17px;
-    object-fit: cover;
+    width: 64px;
+    height: 64px;
+    margin-bottom: 12px;
+    mix-blend-mode: multiply;
   }
 
   h1 {
-    font-size: 2.5rem;
-    margin: 0 0 5px 0;
-    background: linear-gradient(to right, #00d2ff, #a55eea);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    font-weight: 800;
-    letter-spacing: -1px;
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0 0 4px 0;
+    color: #111827;
   }
 
   .subtitle {
-    color: #8c8cbd;
-    font-size: 1.05rem;
+    color: #6b7280;
+    font-size: 0.9rem;
     margin: 0;
   }
 
+  .card {
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    border: 1px solid #e5e7eb;
+  }
+
   .dropzone {
-    border: 2px dashed rgba(0, 210, 255, 0.3);
-    border-radius: 18px;
-    padding: 50px 20px;
-    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    background: rgba(0, 0, 0, 0.3);
-    margin-bottom: 25px;
+    border: 2px dashed #d1d5db;
+    border-radius: 12px;
+    padding: 40px 20px;
+    text-align: center;
+    transition: all 0.2s ease;
+    background: #f9fafb;
+    cursor: pointer;
     position: relative;
-    overflow: hidden;
   }
 
   .dropzone.has-image {
-    padding: 10px;
-    border: 1px solid rgba(0, 210, 255, 0.5);
-    background: rgba(0,0,0,0.5);
+    padding: 8px;
+    border: 1px solid #e5e7eb;
+    background: #ffffff;
+    cursor: default;
   }
 
-  .dropzone:hover {
-    border-color: #00d2ff;
-    background: rgba(0, 210, 255, 0.05);
-    transform: scale(1.02);
-    box-shadow: 0 10px 25px rgba(0, 210, 255, 0.1);
+  .dropzone:hover:not(.has-image) {
+    border-color: #3b82f6;
+    background: #eff6ff;
   }
 
   .dropzone.processing {
-    opacity: 0.5;
+    opacity: 0.7;
     pointer-events: none;
-    animation: pulse 1.5s infinite;
-  }
-
-  @keyframes pulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(0.98); }
-    100% { transform: scale(1); }
   }
 
   .icon {
-    font-size: 3.5rem;
-    margin-bottom: 15px;
-    filter: drop-shadow(0 0 10px rgba(0,210,255,0.5));
+    color: #9ca3af;
+    margin-bottom: 12px;
+  }
+
+  .drop-text {
+    font-size: 0.95rem;
+    color: #4b5563;
+    margin-bottom: 16px;
+    font-weight: 500;
   }
 
   .preview-image {
     max-height: 200px;
-    border-radius: 12px;
+    border-radius: 8px;
     object-fit: contain;
     width: 100%;
   }
 
   .browse-btn {
-    margin-top: 20px;
-    background: linear-gradient(135deg, #00d2ff, #3a7bd5);
-    border: none;
-    padding: 12px 30px;
-    color: white;
-    border-radius: 30px;
-    font-weight: 600;
-    font-size: 1rem;
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    padding: 8px 16px;
+    color: #374151;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 0.85rem;
     cursor: pointer;
-    transition: all 0.3s ease;
-    box-shadow: 0 5px 15px rgba(0, 210, 255, 0.3);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
   }
 
   .browse-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(0, 210, 255, 0.5);
+    background: #f3f4f6;
   }
 
-  .metadata-card {
-    background: rgba(0, 0, 0, 0.4);
-    border-left: 4px solid #a55eea;
-    border-radius: 12px;
-    padding: 15px 20px;
-    text-align: left;
-    margin-bottom: 25px;
-    animation: slideIn 0.4s ease-out;
+  .metadata-section {
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid #e5e7eb;
   }
 
-  @keyframes slideIn {
-    from { opacity: 0; transform: translateX(-20px); }
-    to { opacity: 1; transform: translateX(0); }
+  .metadata-section h3 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6b7280;
+    margin: 0 0 12px 0;
   }
 
-  .metadata-card h3 {
-    margin: 0 0 10px 0;
-    font-size: 1.1rem;
-    color: #e0e0ff;
+  .metadata-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
-  .metadata-card ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    font-size: 0.95rem;
-  }
-
-  .metadata-card li {
-    padding: 5px 0;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
+  .metadata-item {
     display: flex;
     justify-content: space-between;
+    background: #f9fafb;
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    border: 1px solid #f3f4f6;
   }
   
-  .metadata-card li:last-child {
-    border-bottom: none;
+  .meta-key {
+    color: #4b5563;
+    font-weight: 500;
   }
-
-  .metadata-card strong {
-    color: #a55eea;
+  
+  .meta-value {
+    color: #111827;
   }
 
   .settings {
     display: flex;
     flex-direction: column;
-    gap: 15px;
-    text-align: left;
-    background: rgba(0, 0, 0, 0.2);
-    padding: 20px;
-    border-radius: 15px;
-    margin-bottom: 25px;
-    border: 1px solid rgba(255,255,255,0.03);
+    gap: 12px;
+    margin: 24px 0;
   }
 
   .toggle {
@@ -351,90 +302,79 @@
   }
 
   .slider {
-    width: 44px;
-    height: 24px;
-    background-color: rgba(255,255,255,0.1);
-    border-radius: 24px;
+    width: 36px;
+    height: 20px;
+    background-color: #e5e7eb;
+    border-radius: 20px;
     position: relative;
-    margin-right: 15px;
-    transition: 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-    box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+    margin-right: 12px;
+    transition: 0.2s;
   }
 
   .slider::before {
     content: '';
     position: absolute;
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
-    left: 3px;
-    bottom: 3px;
-    background-color: #8c8cbd;
-    transition: 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    transition: 0.2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
   }
 
   input:checked + .slider {
-    background-color: #a55eea;
+    background-color: #10b981;
   }
 
   input:checked + .slider::before {
-    transform: translateX(20px);
-    background-color: white;
-    box-shadow: 0 0 10px rgba(255,255,255,0.8);
+    transform: translateX(16px);
   }
 
   .label-text {
-    font-size: 1.05rem;
-    color: #e0e0ff;
-    font-weight: 500;
+    font-size: 0.9rem;
+    color: #374151;
   }
 
   .clean-btn {
     width: 100%;
-    background: linear-gradient(135deg, #a55eea, #00d2ff);
+    background: #111827;
     border: none;
-    padding: 15px;
+    padding: 12px;
     color: white;
-    border-radius: 12px;
-    font-weight: 700;
-    font-size: 1.1rem;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.95rem;
     cursor: pointer;
-    transition: all 0.3s ease;
-    box-shadow: 0 8px 20px rgba(165, 94, 234, 0.3);
-    margin-bottom: 15px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
+    transition: background 0.2s;
   }
 
   .clean-btn:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 12px 25px rgba(0, 210, 255, 0.5);
+    background: #374151;
   }
 
   .clean-btn:disabled {
-    background: #333;
-    color: #888;
+    background: #9ca3af;
     cursor: not-allowed;
-    box-shadow: none;
   }
 
   .status {
-    padding: 15px;
-    border-radius: 10px;
-    font-weight: bold;
-    animation: slideIn 0.3s ease-out;
+    margin-top: 16px;
+    padding: 12px;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 0.9rem;
+    text-align: center;
   }
   
   .status.info {
-    background: rgba(0, 210, 255, 0.1);
-    color: #00d2ff;
-    border: 1px solid rgba(0, 210, 255, 0.3);
+    background: #eff6ff;
+    color: #2563eb;
   }
   
   .status.success {
-    background: rgba(0, 255, 100, 0.1);
-    color: #00ff64;
-    border: 1px solid rgba(0, 255, 100, 0.3);
-    text-shadow: 0 0 10px rgba(0, 255, 100, 0.4);
+    background: #ecfdf5;
+    color: #059669;
   }
 </style>
