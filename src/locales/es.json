@@ -1,0 +1,13 @@
+﻿{
+  "title": "Photo Exif Cleaner",
+  "subtitle": "Protege tu privacidad antes de compartir",
+  "drag": "Arrastra y suelta fotos aquí",
+  "or": "o",
+  "browse": "Buscar Archivos",
+  "remove_gps": "Eliminar Ubicación GPS",
+  "remove_camera": "Eliminar Info de Cámara",
+  "remove_date": "Eliminar Fecha/Hora",
+  "clean": "Limpiar Metadatos",
+  "success": "¡limpiada correctamente!",
+  "error": "Error al procesar la imagen"
+}

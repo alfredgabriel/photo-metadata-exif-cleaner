@@ -1,0 +1,13 @@
+﻿{
+  "title": "Photo Exif Cleaner",
+  "subtitle": "Protect your privacy before sharing",
+  "drag": "Drag & Drop photos here",
+  "or": "or",
+  "browse": "Browse Files",
+  "remove_gps": "Remove GPS Location",
+  "remove_camera": "Remove Camera Info",
+  "remove_date": "Remove Date/Time",
+  "clean": "Clean Metadata",
+  "success": "cleaned successfully!",
+  "error": "Error processing image"
+}
